@@ -189,6 +189,15 @@ class SourceCodeGenerator:
                 section.left_margin = Cm(3.17)
                 section.right_margin = Cm(3.17)
             
+            # 计算前30页和后30页的行数
+            lines_per_page = 50
+            front_pages = 30
+            back_pages = 30
+            total_pages = front_pages + back_pages
+            
+            front_lines = front_pages * lines_per_page
+            back_lines = back_pages * lines_per_page
+            
             # 添加页眉
             header = doc.sections[0].header
             header_para = header.paragraphs[0]
@@ -229,7 +238,14 @@ class SourceCodeGenerator:
             r.append(fld)
             
             # 添加"页，共60页"
-            run = cell_right.paragraphs[0].add_run("页，共60页")
+            run = cell_right.paragraphs[0].add_run("页，共")
+            run.font.size = Pt(10)
+            
+            # 添加总页数
+            total_pages_run = cell_right.paragraphs[0].add_run(f"{total_pages}")
+            total_pages_run.font.size = Pt(10)
+            
+            run = cell_right.paragraphs[0].add_run("页")
             run.font.size = Pt(10)
             
             # 设置表格无边框
@@ -290,15 +306,6 @@ class SourceCodeGenerator:
             if total_lines < 3000:
                 messagebox.showwarning("警告", f"收集到的代码行数不足3000行（当前{total_lines}行），可能无法满足软著要求")
             
-            # 计算前30页和后30页的行数
-            lines_per_page = 50
-            front_pages = 30
-            back_pages = 30
-            total_pages = front_pages + back_pages
-            
-            front_lines = front_pages * lines_per_page
-            back_lines = back_pages * lines_per_page
-            
             # 如果代码行数不足以填满60页，则全部使用
             if total_lines <= front_lines + back_lines:
                 front_code = all_code_lines
@@ -312,9 +319,10 @@ class SourceCodeGenerator:
             self.update_status("正在添加前30页代码...")
             line_count = 0
             current_file_idx = 0
+            page_count = 0
             
             # 添加文件标题和代码
-            while line_count < len(front_code):
+            while line_count < len(front_code) and page_count < front_pages:
                 # 查找当前行所属的文件
                 file_found = False
                 for idx, (file_path, start, end) in enumerate(file_boundaries):
@@ -345,24 +353,33 @@ class SourceCodeGenerator:
                 code_para.paragraph_format.space_before = Pt(0)
                 
                 line_count += lines_to_add
+                page_count += 1
                 
                 # 添加分页符
-                if line_count < len(front_code):
+                if line_count < len(front_code) and page_count < front_pages:
                     doc.add_page_break()
             
             # 如果有后30页代码，添加分隔页
             if back_code:
-                doc.add_page_break()
-                sep_para = doc.add_paragraph()
-                sep_run = sep_para.add_run("...... 中间省略 ......")
-                sep_run.bold = True
-                sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                doc.add_page_break()
+                # 只在前30页不足时添加分隔页，并确保它不计入总页数
+                if page_count < front_pages:
+                    doc.add_page_break()
+                    sep_para = doc.add_paragraph()
+                    sep_run = sep_para.add_run("...... 中间省略 ......")
+                    sep_run.bold = True
+                    sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    doc.add_page_break()
+                    # 调整页码计数，确保分隔页不计入总页数
+                    page_count = front_pages
+                else:
+                    # 如果已经达到30页，直接添加分页符
+                    doc.add_page_break()
                 
                 # 添加后30页代码
                 self.update_status("正在添加后30页代码...")
                 line_count = 0
                 current_file_idx = -1
+                page_count = 0
                 
                 # 查找最后30页代码的起始文件
                 for idx, (file_path, start, end) in enumerate(file_boundaries):
@@ -371,7 +388,7 @@ class SourceCodeGenerator:
                         break
                 
                 # 添加后30页代码
-                while line_count < len(back_code):
+                while line_count < len(back_code) and page_count < back_pages:
                     # 查找当前行所属的文件
                     file_found = False
                     actual_line = total_lines - back_lines + line_count
@@ -404,9 +421,10 @@ class SourceCodeGenerator:
                     code_para.paragraph_format.space_before = Pt(0)
                     
                     line_count += lines_to_add
+                    page_count += 1
                     
                     # 添加分页符
-                    if line_count < len(back_code):
+                    if line_count < len(back_code) and page_count < back_pages:
                         doc.add_page_break()
             
             # 保存文档
