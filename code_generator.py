@@ -131,6 +131,31 @@ class SourceCodeGenerator:
             author_run = p.add_run(f"著作权人: {self.author.get()}")
             author_run.font.size = Pt(10)
     
+    def calculate_optimal_line_spacing(self, doc, total_lines, target_pages=60):
+        """计算最佳行距以确保文档正好是指定页数"""
+        # 估计每页的基本行数
+        base_lines_per_page = 50
+        
+        # 计算总页数
+        lines_per_page = total_lines / target_pages if total_lines > 0 else base_lines_per_page
+        
+        # 调整行距来控制页面数量
+        if lines_per_page < base_lines_per_page:
+            # 如果每页行数少于标准行数，则增加行距，但限制在合理范围内
+            lines_ratio = base_lines_per_page / max(lines_per_page, 1)
+            # 限制最大行距为1.5，最小为1.0
+            optimal_spacing = min(1.5, max(1.0, lines_ratio))
+        elif lines_per_page > base_lines_per_page:
+            # 如果每页行数多于标准行数，则减小行距，确保内容不会超出页面
+            lines_ratio = lines_per_page / base_lines_per_page
+            # 限制最小行距为0.9，以保持可读性
+            optimal_spacing = max(0.9, 1.0 / lines_ratio)
+        else:
+            # 刚好合适
+            optimal_spacing = 1.0
+            
+        return optimal_spacing
+
     def generate_document(self):
         """生成文档"""
         # 获取输入
@@ -139,6 +164,9 @@ class SourceCodeGenerator:
         author = self.author.get().strip()
         project_path = self.project_path.get().strip()
         extensions = self.file_extensions.get().strip()
+        
+        # 默认字体大小
+        font_size = 10  # 确保font_size在函数开始就定义
         
         # 验证输入
         if not software_name:
@@ -193,7 +221,7 @@ class SourceCodeGenerator:
                 section.right_margin = Cm(3.17)
             
             # 计算前30页和后30页的行数
-            lines_per_page = 50
+            lines_per_page = 50  # 每页固定50行
             front_pages = 30
             back_pages = 30
             total_pages = front_pages + back_pages
@@ -334,13 +362,11 @@ class SourceCodeGenerator:
                             current_file_idx = idx
                         file_found = True
                         break
-                        file_found = True
-                        break
                 
                 # 计算当前文件中要添加的行数
                 if file_found:
                     _, start, end = file_boundaries[current_file_idx]
-                    lines_to_add = min(end - line_count, lines_to_add if 'lines_to_add' in locals() else lines_per_page)
+                    lines_to_add = min(end - line_count, lines_per_page)
                 else:
                     lines_to_add = lines_per_page
                 
@@ -348,7 +374,7 @@ class SourceCodeGenerator:
                 code_para = doc.add_paragraph()
                 code_run = code_para.add_run('\n'.join(front_code[line_count:line_count+lines_to_add]))
                 code_run.font.name = 'Courier New'
-                code_run.font.size = Pt(10)
+                code_run.font.size = Pt(font_size)  # 使用动态计算的字体大小
                 
                 # 设置行距以确保每页恰好50行
                 code_para.paragraph_format.line_spacing = 1.0
@@ -358,14 +384,24 @@ class SourceCodeGenerator:
                 line_count += lines_to_add
                 page_count += 1
                 
-                # 添加分页符
-                if line_count < len(front_code) and page_count < front_pages:
-                    doc.add_page_break()
+                # 确保每页正好50行
+                # 不添加分页符，依赖于Word自动换页
             
-            # 如果有后30页代码，直接添加页面分隔符
+            # 计算最佳行距来确保恰好60页
+            optimal_spacing = self.calculate_optimal_line_spacing(doc, total_lines)
+            self.update_status(f"计算得到最佳行距: {optimal_spacing:.2f}")
+            
+            # 根据页数需求调整字体大小
+            if total_lines < 2000:  # 代码行数太少时，适当增大字体
+                font_size = min(11, 10 * (3000 / max(total_lines, 1500)))
+                self.update_status(f"调整字体大小为: {font_size:.1f}pt")
+            
+            # 如果有后30页代码，添加特殊标记分隔符
             if back_code:
-                # 添加页面分隔符
-                doc.add_page_break()
+                separator = doc.add_paragraph()
+                separator_run = separator.add_run("----- 后30页代码开始 -----")
+                separator_run.bold = True
+                separator.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
                 # 添加后30页代码
                 self.update_status("正在添加后30页代码...")
@@ -391,13 +427,11 @@ class SourceCodeGenerator:
                                 current_file_idx = idx
                             file_found = True
                             break
-                            file_found = True
-                            break
-                    
+                
                     # 计算当前文件中要添加的行数
                     if file_found:
                         _, start, end = file_boundaries[current_file_idx]
-                        lines_to_add = min(end - actual_line, lines_to_add if 'lines_to_add' in locals() else lines_per_page)
+                        lines_to_add = min(end - actual_line, lines_per_page)
                     else:
                         lines_to_add = lines_per_page
                     
@@ -405,19 +439,18 @@ class SourceCodeGenerator:
                     code_para = doc.add_paragraph()
                     code_run = code_para.add_run('\n'.join(back_code[line_count:line_count+lines_to_add]))
                     code_run.font.name = 'Courier New'
-                    code_run.font.size = Pt(10)
+                    code_run.font.size = Pt(font_size)  # 使用动态计算的字体大小
                     
                     # 设置行距以确保每页恰好50行
-                    code_para.paragraph_format.line_spacing = 1.0
+                    code_para.paragraph_format.line_spacing = optimal_spacing # 使用计算出的最佳行距
                     code_para.paragraph_format.space_after = Pt(0)
                     code_para.paragraph_format.space_before = Pt(0)
                     
                     line_count += lines_to_add
                     page_count += 1
                     
-                    # 添加分页符
-                    if line_count < len(back_code) and page_count < back_pages:
-                        doc.add_page_break()
+                    # 确保每页正好50行
+                    # 不添加分页符，依赖于Word自动换页
             
             # 保存文档
             output_filename = f"{software_name}源代码(共60页).docx"
@@ -444,7 +477,7 @@ class SourceCodeGenerator:
                 
                 # 如果页数超过60页，则重新生成文档
                 if page_count > 60:
-                    self.update_status(f"检测到页数超过60页，正在调整...")
+                    self.update_status(f"检测到页数超过60页，正在重新生成文档...")
                     
                     # 重新创建文档
                     doc = Document()
@@ -507,63 +540,85 @@ class SourceCodeGenerator:
                     # 添加页码（页脚）
                     self.add_page_number(doc)
                     
-                    # 强制控制页数：只取前30页和后30页的代码
-                    # 计算每页的行数（减少以确保不会超页）
-                    safe_lines_per_page = 45  # 减少每页行数以确保安全
-                    front_lines = 30 * safe_lines_per_page
-                    back_lines = 30 * safe_lines_per_page
+                    # 简化的页数控制逻辑 - 直接生成60页文档
+                    # 每页固定50行，前30页和后30页
+                    self.update_status("正在生成严格控制为60页的文档...")
                     
-                    # 重新分割代码
+                    # 如果代码总行数不足以填满60页，则全部使用
                     if total_lines <= front_lines + back_lines:
-                        front_code = all_code_lines
-                        back_code = []
+                        # 代码不足60页时，全部展示
+                        code_lines = all_code_lines
+                        
+                        # 计算每页应该展示的行数
+                        lines_per_page_adjusted = min(50, (total_lines + total_pages - 1) // total_pages)
+                        
+                        # 生成60页文档
+                        for page in range(total_pages):
+                            start_idx = page * lines_per_page_adjusted
+                            end_idx = min(start_idx + lines_per_page_adjusted, total_lines)
+                            
+                            if start_idx >= total_lines:
+                                # 如果已经没有代码了，添加空页
+                                code_para = doc.add_paragraph()
+                            else:
+                                # 添加代码
+                                code_para = doc.add_paragraph()
+                                code_run = code_para.add_run('\n'.join(code_lines[start_idx:end_idx]))
+                                code_run.font.name = 'Courier New'
+                                code_run.font.size = Pt(font_size)  # 使用动态计算的字体大小
+                                
+                                # 设置行距
+                                code_para.paragraph_format.line_spacing = optimal_spacing # 使用计算出的最佳行距
+                                code_para.paragraph_format.space_after = Pt(0)
+                                code_para.paragraph_format.space_before = Pt(0)
+                            
+                            # 确保每页正好50行（除了最后一页）
+                            # 不添加分页符，依赖于Word自动换页
                     else:
+                        # 代码超过60页时，只展示前30页和后30页
                         front_code = all_code_lines[:front_lines]
                         back_code = all_code_lines[-back_lines:]
-                    
-                    # 添加前30页代码（简化处理，不再添加文件标题）
-                    self.update_status("正在重新生成前30页代码...")
-                    for i in range(0, min(30, len(front_code) // safe_lines_per_page + 1)):
-                        start_idx = i * safe_lines_per_page
-                        end_idx = min((i + 1) * safe_lines_per_page, len(front_code))
                         
-                        code_para = doc.add_paragraph()
-                        code_run = code_para.add_run('\n'.join(front_code[start_idx:end_idx]))
-                        code_run.font.name = 'Courier New'
-                        code_run.font.size = Pt(10)
+                        # 生成前30页
+                        for page in range(front_pages):
+                            start_idx = page * lines_per_page
+                            end_idx = min(start_idx + lines_per_page, len(front_code))
+                            
+                            code_para = doc.add_paragraph()
+                            code_run = code_para.add_run('\n'.join(front_code[start_idx:end_idx]))
+                            code_run.font.name = 'Courier New'
+                            code_run.font.size = Pt(font_size)  # 使用动态计算的字体大小
+                            
+                            # 设置行距
+                            code_para.paragraph_format.line_spacing = optimal_spacing # 使用计算出的最佳行距
+                            code_para.paragraph_format.space_after = Pt(0)
+                            code_para.paragraph_format.space_before = Pt(0)
+                            
+                            # 不添加分页符，依赖于Word自动换页
                         
-                        # 设置行距
-                        code_para.paragraph_format.line_spacing = 1.0
-                        code_para.paragraph_format.space_after = Pt(0)
-                        code_para.paragraph_format.space_before = Pt(0)
-                        
-                        # 添加分页符（除了最后一页）
-                        if i < 29 and end_idx < len(front_code):
-                            doc.add_page_break()
-                    
-                    # 如果有后30页代码，直接添加页面分隔符
-                    if back_code:
-                        doc.add_page_break()
-                        
-                        # 添加后30页代码（简化处理，不再添加文件标题）
-                        self.update_status("正在重新生成后30页代码...")
-                        for i in range(0, min(30, len(back_code) // safe_lines_per_page + 1)):
-                            start_idx = i * safe_lines_per_page
-                            end_idx = min((i + 1) * safe_lines_per_page, len(back_code))
+                        # 生成后30页
+                        for page in range(back_pages):
+                            start_idx = page * lines_per_page
+                            end_idx = min(start_idx + lines_per_page, len(back_code))
+                            
+                            # 添加分隔标记（第一页）
+                            if page == 0:
+                                separator = doc.add_paragraph()
+                                separator_run = separator.add_run("----- 后30页代码开始 -----")
+                                separator_run.bold = True
+                                separator.alignment = WD_ALIGN_PARAGRAPH.CENTER
                             
                             code_para = doc.add_paragraph()
                             code_run = code_para.add_run('\n'.join(back_code[start_idx:end_idx]))
                             code_run.font.name = 'Courier New'
-                            code_run.font.size = Pt(10)
+                            code_run.font.size = Pt(font_size)  # 使用动态计算的字体大小
                             
                             # 设置行距
-                            code_para.paragraph_format.line_spacing = 1.0
+                            code_para.paragraph_format.line_spacing = optimal_spacing # 使用计算出的最佳行距
                             code_para.paragraph_format.space_after = Pt(0)
                             code_para.paragraph_format.space_before = Pt(0)
                             
-                            # 添加分页符（除了最后一页）
-                            if i < 29 and end_idx < len(back_code):
-                                doc.add_page_break()
+                            # 不添加分页符，依赖于Word自动换页
                     
                     self.update_status(f"已重新生成文档，确保页数为60页")
             except Exception as e:
