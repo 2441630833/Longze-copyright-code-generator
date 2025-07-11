@@ -26,16 +26,19 @@ class SourceCodeGenerator:
         ttk.Label(main_frame, text="软件名称:").grid(row=0, column=0, sticky=tk.W, pady=10)
         self.software_name = ttk.Entry(main_frame, width=50)
         self.software_name.grid(row=0, column=1, sticky=tk.W, pady=10)
+        self.software_name.insert(0, "测试软件")
         
         # 版本号
         ttk.Label(main_frame, text="版本号:").grid(row=1, column=0, sticky=tk.W, pady=10)
         self.version = ttk.Entry(main_frame, width=50)
         self.version.grid(row=1, column=1, sticky=tk.W, pady=10)
+        self.version.insert(0, "V1.0")
         
         # 作者名
         ttk.Label(main_frame, text="作者名:").grid(row=2, column=0, sticky=tk.W, pady=10)
         self.author = ttk.Entry(main_frame, width=50)
         self.author.grid(row=2, column=1, sticky=tk.W, pady=10)
+        self.author.insert(0, "测试")
         
         # 项目路径
         ttk.Label(main_frame, text="项目路径:").grid(row=3, column=0, sticky=tk.W, pady=10)
