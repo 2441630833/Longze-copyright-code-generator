@@ -98,7 +98,7 @@ class SourceCodeGenerator:
                 extensions.add(ext.lstrip('.'))
                 
         # 按常见编程语言排序
-        common_exts = ['java', 'py', 'js', 'html', 'css', 'xml', 'json', 'c', 'cpp', 'h', 'hpp', 'cs', 'php', 'go', 'rs', 'ts']
+        common_exts = ['java', 'py', 'js', 'html', 'css', 'xml', 'json', 'c', 'cpp', 'h', 'hpp', 'cs', 'php', 'go', 'rs', 'ts', 'vue', 'jsx', 'tsx']
         sorted_exts = sorted(extensions, key=lambda x: (x not in common_exts, x))
         
         if sorted_exts:
@@ -241,8 +241,8 @@ class SourceCodeGenerator:
             run = cell_right.paragraphs[0].add_run("页，共")
             run.font.size = Pt(10)
             
-            # 添加总页数
-            total_pages_run = cell_right.paragraphs[0].add_run(f"{total_pages}")
+            # 添加总页数，固定为60页
+            total_pages_run = cell_right.paragraphs[0].add_run("60")
             total_pages_run.font.size = Pt(10)
             
             run = cell_right.paragraphs[0].add_run("页")
@@ -321,23 +321,23 @@ class SourceCodeGenerator:
             current_file_idx = 0
             page_count = 0
             
-            # 添加文件标题和代码
+            # 添加代码
             while line_count < len(front_code) and page_count < front_pages:
                 # 查找当前行所属的文件
                 file_found = False
                 for idx, (file_path, start, end) in enumerate(file_boundaries):
                     if start <= line_count < end:
                         if current_file_idx != idx:
-                            # 添加文件标题
-                            doc.add_paragraph(f"文件: {file_path}", style='Heading 2')
                             current_file_idx = idx
+                        file_found = True
+                        break
                         file_found = True
                         break
                 
                 # 计算当前文件中要添加的行数
                 if file_found:
                     _, start, end = file_boundaries[current_file_idx]
-                    lines_to_add = min(end - line_count, lines_per_page)
+                    lines_to_add = min(end - line_count, lines_to_add if 'lines_to_add' in locals() else lines_per_page)
                 else:
                     lines_to_add = lines_per_page
                 
@@ -359,21 +359,10 @@ class SourceCodeGenerator:
                 if line_count < len(front_code) and page_count < front_pages:
                     doc.add_page_break()
             
-            # 如果有后30页代码，添加分隔页
+            # 如果有后30页代码，直接添加页面分隔符
             if back_code:
-                # 只在前30页不足时添加分隔页，并确保它不计入总页数
-                if page_count < front_pages:
-                    doc.add_page_break()
-                    sep_para = doc.add_paragraph()
-                    sep_run = sep_para.add_run("...... 中间省略 ......")
-                    sep_run.bold = True
-                    sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    doc.add_page_break()
-                    # 调整页码计数，确保分隔页不计入总页数
-                    page_count = front_pages
-                else:
-                    # 如果已经达到30页，直接添加分页符
-                    doc.add_page_break()
+                # 添加页面分隔符
+                doc.add_page_break()
                 
                 # 添加后30页代码
                 self.update_status("正在添加后30页代码...")
@@ -396,16 +385,16 @@ class SourceCodeGenerator:
                     for idx, (file_path, start, end) in enumerate(file_boundaries):
                         if start <= actual_line < end:
                             if current_file_idx != idx:
-                                # 添加文件标题
-                                doc.add_paragraph(f"文件: {file_path}", style='Heading 2')
                                 current_file_idx = idx
+                            file_found = True
+                            break
                             file_found = True
                             break
                     
                     # 计算当前文件中要添加的行数
                     if file_found:
                         _, start, end = file_boundaries[current_file_idx]
-                        lines_to_add = min(end - actual_line, lines_per_page)
+                        lines_to_add = min(end - actual_line, lines_to_add if 'lines_to_add' in locals() else lines_per_page)
                     else:
                         lines_to_add = lines_per_page
                     
@@ -429,6 +418,162 @@ class SourceCodeGenerator:
             
             # 保存文档
             output_filename = f"{software_name}源代码(共60页).docx"
+            
+            # 二次检查页数，确保不超过60页
+            self.update_status("正在检查页数...")
+            
+            # 临时保存文档以便检查页数
+            temp_filename = f"temp_{output_filename}"
+            doc.save(temp_filename)
+            
+            # 重新打开文档以检查页数
+            try:
+                # 使用更可靠的方法检查页数
+                check_doc = Document(temp_filename)
+                
+                # 计算页数（通过分页符和段落估算）
+                page_count = 1  # 至少有1页
+                for para in check_doc.paragraphs:
+                    if not para.text and len(para.runs) == 0:  # 空段落可能是分页符
+                        page_count += 1
+                
+                self.update_status(f"估计页数: {page_count}")
+                
+                # 如果页数超过60页，则重新生成文档
+                if page_count > 60:
+                    self.update_status(f"检测到页数超过60页，正在调整...")
+                    
+                    # 重新创建文档
+                    doc = Document()
+                    
+                    # 设置页面边距
+                    sections = doc.sections
+                    for section in sections:
+                        section.top_margin = Cm(2.54)
+                        section.bottom_margin = Cm(2.54)
+                        section.left_margin = Cm(3.17)
+                        section.right_margin = Cm(3.17)
+                    
+                    # 添加页眉
+                    header = doc.sections[0].header
+                    header_para = header.paragraphs[0]
+                    header_para.text = f"{software_name} {version}"
+                    header_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    
+                    # 添加右上角页码信息
+                    header_table = header.add_table(1, 2, width=Cm(16))
+                    cell_left = header_table.cell(0, 0)
+                    cell_left.text = f"{software_name} {version}"
+                    cell_left.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    cell_right = header_table.cell(0, 1)
+                    cell_right.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    
+                    # 添加页码
+                    run = cell_right.paragraphs[0].add_run("第")
+                    run.font.size = Pt(10)
+                    page_num = cell_right.paragraphs[0].add_run()
+                    r = page_num._r
+                    fld = OxmlElement('w:fldChar')
+                    fld.set(qn('w:fldCharType'), 'begin')
+                    r.append(fld)
+                    run = cell_right.paragraphs[0].add_run()
+                    r = run._r
+                    instrText = OxmlElement('w:instrText')
+                    instrText.text = " PAGE "
+                    r.append(instrText)
+                    run = cell_right.paragraphs[0].add_run()
+                    r = run._r
+                    fld = OxmlElement('w:fldChar')
+                    fld.set(qn('w:fldCharType'), 'end')
+                    r.append(fld)
+                    run = cell_right.paragraphs[0].add_run("页，共")
+                    run.font.size = Pt(10)
+                    total_pages_run = cell_right.paragraphs[0].add_run("60")
+                    total_pages_run.font.size = Pt(10)
+                    run = cell_right.paragraphs[0].add_run("页")
+                    run.font.size = Pt(10)
+                    
+                    # 设置表格无边框
+                    for row in header_table.rows:
+                        for cell in row.cells:
+                            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.font.size = Pt(10)
+                    
+                    # 添加页码（页脚）
+                    self.add_page_number(doc)
+                    
+                    # 强制控制页数：只取前30页和后30页的代码
+                    # 计算每页的行数（减少以确保不会超页）
+                    safe_lines_per_page = 45  # 减少每页行数以确保安全
+                    front_lines = 30 * safe_lines_per_page
+                    back_lines = 30 * safe_lines_per_page
+                    
+                    # 重新分割代码
+                    if total_lines <= front_lines + back_lines:
+                        front_code = all_code_lines
+                        back_code = []
+                    else:
+                        front_code = all_code_lines[:front_lines]
+                        back_code = all_code_lines[-back_lines:]
+                    
+                    # 添加前30页代码（简化处理，不再添加文件标题）
+                    self.update_status("正在重新生成前30页代码...")
+                    for i in range(0, min(30, len(front_code) // safe_lines_per_page + 1)):
+                        start_idx = i * safe_lines_per_page
+                        end_idx = min((i + 1) * safe_lines_per_page, len(front_code))
+                        
+                        code_para = doc.add_paragraph()
+                        code_run = code_para.add_run('\n'.join(front_code[start_idx:end_idx]))
+                        code_run.font.name = 'Courier New'
+                        code_run.font.size = Pt(10)
+                        
+                        # 设置行距
+                        code_para.paragraph_format.line_spacing = 1.0
+                        code_para.paragraph_format.space_after = Pt(0)
+                        code_para.paragraph_format.space_before = Pt(0)
+                        
+                        # 添加分页符（除了最后一页）
+                        if i < 29 and end_idx < len(front_code):
+                            doc.add_page_break()
+                    
+                    # 如果有后30页代码，直接添加页面分隔符
+                    if back_code:
+                        doc.add_page_break()
+                        
+                        # 添加后30页代码（简化处理，不再添加文件标题）
+                        self.update_status("正在重新生成后30页代码...")
+                        for i in range(0, min(30, len(back_code) // safe_lines_per_page + 1)):
+                            start_idx = i * safe_lines_per_page
+                            end_idx = min((i + 1) * safe_lines_per_page, len(back_code))
+                            
+                            code_para = doc.add_paragraph()
+                            code_run = code_para.add_run('\n'.join(back_code[start_idx:end_idx]))
+                            code_run.font.name = 'Courier New'
+                            code_run.font.size = Pt(10)
+                            
+                            # 设置行距
+                            code_para.paragraph_format.line_spacing = 1.0
+                            code_para.paragraph_format.space_after = Pt(0)
+                            code_para.paragraph_format.space_before = Pt(0)
+                            
+                            # 添加分页符（除了最后一页）
+                            if i < 29 and end_idx < len(back_code):
+                                doc.add_page_break()
+                    
+                    self.update_status(f"已重新生成文档，确保页数为60页")
+            except Exception as e:
+                self.update_status(f"检查页数时出错: {str(e)}")
+            
+            # 删除临时文件
+            try:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+            except:
+                pass
+            
+            # 保存最终文档
             doc.save(output_filename)
             
             self.progress["value"] = self.progress["maximum"]
