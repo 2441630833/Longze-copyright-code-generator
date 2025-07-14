@@ -14,7 +14,7 @@ import re
 class SourceCodeGenerator:
     def __init__(self, root):
         self.root = root
-        self.root.title("软著源代码生成器")
+        self.root.title("Longze软著源代码生成器")
         self.root.geometry("600x400")
         self.root.resizable(False, False)
         
@@ -204,10 +204,100 @@ class SourceCodeGenerator:
                 messagebox.showerror("错误", f"在指定路径下未找到任何匹配的文件")
                 return
             
+            # 文件过多时的处理策略
+            target_line_count = 3000  # 目标行数，对应60页，每页50行
+            max_files = 100  # 最大文件数限制
+            
+            # 如果文件过多，选择最有代表性的文件
+            if len(all_files) > max_files:
+                self.update_status(f"发现{len(all_files)}个文件，超过处理限制，将选择最有代表性的{max_files}个文件...")
+                
+                # 根据文件大小和修改时间排序（优先选择较大的和较新的文件）
+                all_files.sort(key=lambda f: (os.path.getsize(f), os.path.getmtime(f)), reverse=True)
+                all_files = all_files[:max_files]
+            
+            # 收集所有代码行
+            all_code_lines = []
+            file_boundaries = []  # 记录每个文件的起始行和结束行
+            estimated_total_lines = 0  # 估计总行数
+            processed_files = []  # 实际处理的文件
+            
+            # 首先估计每个文件的行数
+            file_line_estimates = []
+            for file_path in all_files:
+                try:
+                    # 快速估计文件行数
+                    with open(file_path, 'rb') as f:
+                        # 计算文件中的换行符数量
+                        line_count = sum(1 for _ in f.read().split(b'\n'))
+                    file_line_estimates.append((file_path, line_count))
+                except:
+                    # 如果无法读取，假设一个默认值
+                    file_line_estimates.append((file_path, 50))
+            
+            # 按行数从大到小排序
+            file_line_estimates.sort(key=lambda x: x[1], reverse=True)
+            
+            # 限制总行数在4000-6000行之间，这样处理后会更接近60页
+            max_total_lines = 6000
+            min_total_lines = 4000
+            
+            # 首先选取最重要的文件，直到达到最小行数要求
+            for file_path, line_count in file_line_estimates:
+                estimated_total_lines += line_count
+                processed_files.append(file_path)
+                
+                # 如果已经超过最小行数且文件数超过10个，可以停止添加
+                if estimated_total_lines >= min_total_lines and len(processed_files) >= 10:
+                    break
+                    
+                # 如果已经超过最大行数，停止添加
+                if estimated_total_lines >= max_total_lines:
+                    break
+            
+            self.update_status(f"选择了{len(processed_files)}/{len(all_files)}个文件进行处理，估计总行数约{estimated_total_lines}行")
+            
+            # 实际处理选定的文件
+            for i, file_path in enumerate(processed_files):
+                # 更新进度
+                self.progress["value"] = i + 1
+                self.update_status(f"收集文件 {i+1}/{len(processed_files)}: {os.path.basename(file_path)}")
+                
+                # 读取文件内容
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except UnicodeDecodeError:
+                    try:
+                        with open(file_path, 'r', encoding='gbk') as f:
+                            content = f.read()
+                    except (UnicodeDecodeError, PermissionError, OSError) as e:
+                        self.update_status(f"警告: 无法读取文件 {file_path}，原因: {str(e)}，跳过")
+                        continue
+                except (PermissionError, OSError) as e:
+                    self.update_status(f"警告: 无法读取文件 {file_path}，原因: {str(e)}，跳过")
+                    continue
+                
+                # 添加文件内容
+                lines = content.split('\n')
+                
+                # 记录文件边界
+                start_line = len(all_code_lines)
+                all_code_lines.extend(lines)
+                end_line = len(all_code_lines)
+                
+                # 记录文件信息
+                relative_path = os.path.relpath(file_path, project_path)
+                file_boundaries.append((relative_path, start_line, end_line))
+            
+            # 计算总行数
+            total_lines = len(all_code_lines)
+            self.update_status(f"总共收集了 {total_lines} 行代码")
+            
             # 更新进度条
-            self.progress["maximum"] = len(all_files) + 1
+            self.progress["maximum"] = len(processed_files) + 1
             self.progress["value"] = 1
-            self.update_status(f"找到 {len(all_files)} 个文件，开始处理...")
+            self.update_status(f"找到 {len(processed_files)} 个文件，开始处理...")
             
             # 创建文档
             doc = Document()
@@ -269,29 +359,7 @@ class SourceCodeGenerator:
             r.append(fld)
             
             # 添加"页，共x页"
-            run = cell_right.paragraphs[0].add_run("页，共")
-            run.font.size = Pt(10)
-            
-            # 添加总页数，使用域代码动态显示实际页数
-            run = cell_right.paragraphs[0].add_run()
-            r = run._r
-            fld = OxmlElement('w:fldChar')
-            fld.set(qn('w:fldCharType'), 'begin')
-            r.append(fld)
-            
-            run = cell_right.paragraphs[0].add_run()
-            r = run._r
-            instrText = OxmlElement('w:instrText')
-            instrText.text = " NUMPAGES "
-            r.append(instrText)
-            
-            run = cell_right.paragraphs[0].add_run()
-            r = run._r
-            fld = OxmlElement('w:fldChar')
-            fld.set(qn('w:fldCharType'), 'end')
-            r.append(fld)
-            
-            run = cell_right.paragraphs[0].add_run("页")
+            run = cell_right.paragraphs[0].add_run("页，共60页")
             run.font.size = Pt(10)
             
             # 设置表格无边框
@@ -310,43 +378,6 @@ class SourceCodeGenerator:
             
             # 添加页码（使用新的方法）
             self.add_page_number(doc)
-            
-            # 收集所有代码行
-            all_code_lines = []
-            file_boundaries = []  # 记录每个文件的起始行和结束行
-            
-            for i, file_path in enumerate(all_files):
-                # 更新进度
-                self.progress["value"] = i + 1
-                self.update_status(f"收集文件 {i+1}/{len(all_files)}: {os.path.basename(file_path)}")
-                
-                # 读取文件内容
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                except UnicodeDecodeError:
-                    try:
-                        with open(file_path, 'r', encoding='gbk') as f:
-                            content = f.read()
-                    except:
-                        self.update_status(f"警告: 无法读取文件 {file_path}，跳过")
-                        continue
-                
-                # 添加文件内容
-                lines = content.split('\n')
-                
-                # 记录文件边界
-                start_line = len(all_code_lines)
-                all_code_lines.extend(lines)
-                end_line = len(all_code_lines)
-                
-                # 记录文件信息
-                relative_path = os.path.relpath(file_path, project_path)
-                file_boundaries.append((relative_path, start_line, end_line))
-            
-            # 计算总行数
-            total_lines = len(all_code_lines)
-            self.update_status(f"总共收集了 {total_lines} 行代码")
             
             # 确保有足够的代码行
             if total_lines < 3000:
