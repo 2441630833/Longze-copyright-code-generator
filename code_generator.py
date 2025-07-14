@@ -353,7 +353,7 @@ class SourceCodeGenerator:
                 messagebox.showwarning("警告", f"收集到的代码行数不足3000行（当前{total_lines}行），可能无法满足软著要求")
             
             # 直接生成60页固定格式文档
-            self.update_status("正在生成严格控制为60页的文档...")
+            self.update_status("正在生成严格控制为60页的文档（每页强制分页）...")
             
             # 计算最佳行距和字体大小
             optimal_spacing = self.calculate_optimal_line_spacing(doc, total_lines)
@@ -391,6 +391,10 @@ class SourceCodeGenerator:
                         code_para.paragraph_format.line_spacing = optimal_spacing
                         code_para.paragraph_format.space_after = Pt(0)
                         code_para.paragraph_format.space_before = Pt(0)
+                        
+                        # 每页后添加分页符
+                        if page < total_pages - 1:  # 最后一页不添加分页符
+                            doc.add_page_break()
             else:
                 # 代码超过60页时，只展示前30页和后30页
                 front_code = all_code_lines[:front_lines]
@@ -410,12 +414,19 @@ class SourceCodeGenerator:
                     code_para.paragraph_format.line_spacing = optimal_spacing
                     code_para.paragraph_format.space_after = Pt(0)
                     code_para.paragraph_format.space_before = Pt(0)
+                    
+                    # 每页后添加分页符
+                    if page < front_pages - 1:  # 前部分的最后一页不添加分页符
+                        doc.add_page_break()
                 
                 # 添加分隔标记
                 separator = doc.add_paragraph()
                 separator_run = separator.add_run("----- 后30页代码开始 -----")
                 separator_run.bold = True
                 separator.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # 添加分页符确保后30页从新页面开始
+                doc.add_page_break()
                 
                 # 生成后30页
                 for page in range(back_pages):
@@ -431,6 +442,10 @@ class SourceCodeGenerator:
                     code_para.paragraph_format.line_spacing = optimal_spacing
                     code_para.paragraph_format.space_after = Pt(0)
                     code_para.paragraph_format.space_before = Pt(0)
+                    
+                    # 每页后添加分页符
+                    if page < back_pages - 1:  # 最后一页不添加分页符
+                        doc.add_page_break()
             
             # 保存文档
             output_filename = f"{software_name}源代码.docx"
@@ -439,7 +454,7 @@ class SourceCodeGenerator:
             self.progress["value"] = self.progress["maximum"]
             self.update_status(f"文档生成完成! 总共处理了 {total_lines} 行代码，保存为 {output_filename}")
             
-            messagebox.showinfo("成功", f"文档已成功生成: {output_filename}\n\n符合软著申请要求：\n- 动态生成页数，每页约50行\n- 前30页为代码开头，后30页为代码结尾\n- 页眉包含软件名称和版本号\n- 页脚包含著作权人信息")
+            messagebox.showinfo("成功", f"文档已成功生成: {output_filename}\n\n符合软著申请要求：\n- 强制生成60页，每页约50行\n- 前30页为代码开头，后30页为代码结尾\n- 页眉包含软件名称和版本号\n- 页脚包含著作权人信息")
             
         except Exception as e:
             messagebox.showerror("错误", f"生成文档时出错: {str(e)}")
